@@ -88,4 +88,65 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                              .body("Unexpected Error: " + e.getMessage());
     }
+    
+    @ExceptionHandler(AdminPlaceFetchException.class)
+    public ResponseEntity<String> handleAdminPlaceFetchException(AdminPlaceFetchException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ex.getMessage());
+    }
+    
+    @ExceptionHandler(AdminProfileException.class)
+    public ResponseEntity<String> handleAdminProfileException(AdminProfileException ex) {
+        return ResponseEntity.status(502).body(ex.getMessage());
+    }
+    
+    @ExceptionHandler(UserPhoneUpdateException.class)
+    public ResponseEntity<String> handleUserPhoneUpdateException(UserPhoneUpdateException ex) {
+        return ResponseEntity.status(502).body(ex.getMessage());
+    }
+
+    @ExceptionHandler(OtpVerificationException.class)
+    public ResponseEntity<String> handleOtpVerificationException(OtpVerificationException ex) {
+        return ResponseEntity.badRequest().body(ex.getMessage());
+    }
+
+    @ExceptionHandler(UserRegistrationException.class)
+    public ResponseEntity<String> handleUserRegistrationException(UserRegistrationException ex) {
+        return ResponseEntity.status(502).body(ex.getMessage());
+    }
+
+    @ExceptionHandler(MerchantRegistrationException.class)
+    public ResponseEntity<String> handleMerchantRegistrationException(MerchantRegistrationException ex) {
+        return ResponseEntity.status(502).body(ex.getMessage());
+    }
+    
+    @ExceptionHandler(ForgotPasswordInitiationException.class)
+    public ResponseEntity<String> handleForgotPasswordInitiationException(ForgotPasswordInitiationException ex) {
+        return ResponseEntity.badRequest().body("{\"error\":\"" + ex.getMessage() + "\"}");
+    }
+
+    @ExceptionHandler(PasswordResetException.class)
+    public ResponseEntity<String> handlePasswordResetException(PasswordResetException ex) {
+        return ResponseEntity.status(400).body("{\"error\":\"" + ex.getMessage() + "\"}");
+    }
+    
+    @ExceptionHandler(LoginException.class)
+    public ResponseEntity<String> handleLoginException(LoginException ex) {
+        return ResponseEntity.status(401).body("{\"error\":\"" + ex.getMessage() + "\"}");
+    }
+
+
+    @ExceptionHandler(LogoutException.class)
+    public ResponseEntity<String> handleLogoutException(LogoutException ex) {
+        return ResponseEntity.status(500).body("{\"error\":\"" + ex.getMessage() + "\"}");
+    }
+    
+    @ExceptionHandler(ClientPlaceException.class)
+    public ResponseEntity<Map<String, Object>> handleClientPlaceException(ClientPlaceException ex) {
+        Map<String, Object> errorBody = Map.of(
+            "error", "Client Place Error",
+            "status", HttpStatus.BAD_REQUEST.value(),
+            "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody);
+    }
 }

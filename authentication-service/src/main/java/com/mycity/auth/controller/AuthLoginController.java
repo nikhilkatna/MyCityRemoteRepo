@@ -2,6 +2,8 @@ package com.mycity.auth.controller;
 
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import com.mycity.auth.config.JwtService;
+import com.mycity.auth.exception.AuthenticationException;
 import com.mycity.shared.admindto.AdminDetailsResponse;
 import com.mycity.shared.admindto.AdminLoginRequest;
 import com.mycity.shared.errordto.ErrorResponse;
@@ -28,6 +31,8 @@ import reactor.core.publisher.Mono;
 @AllArgsConstructor
 public class AuthLoginController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthLoginController.class);
+
     private final WebClient.Builder webClientBuilder;
     private final JwtService jwtService;
 
@@ -37,6 +42,8 @@ public class AuthLoginController {
 
     @PostMapping("/login/user")
     public ResponseEntity<?> loginUser(@RequestBody UserLoginRequest request) {
+        log.info("Attempting user login for email: {}", request.getEmail());
+
         try {
             LoginResponse response = webClientBuilder.build()
                 .post()
@@ -45,17 +52,17 @@ public class AuthLoginController {
                 .retrieve()
                 .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
                     res -> res.bodyToMono(ErrorResponse.class)
-                        .flatMap(error -> Mono.error(new RuntimeException(error.getMessage())))
+                        .flatMap(error -> Mono.error(new AuthenticationException(error.getMessage())))
                 )
                 .bodyToMono(LoginResponse.class)
                 .block();
 
-            // ✅ If login is successful
             if (response != null && Boolean.TRUE.equals(response.getStatus())) {
-                // Generate JWT cookie
                 ResponseCookie jwtCookie = jwtService.generateJwtCookie(
                     response.getId(), request.getEmail(), response.getRole()
                 );
+
+                log.info("User login successful for email: {}", request.getEmail());
 
                 return ResponseEntity.ok()
                         .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
@@ -65,14 +72,18 @@ public class AuthLoginController {
                         ));
             }
 
-            throw new RuntimeException("Invalid user credentials");
+            log.warn("Invalid user credentials for email: {}", request.getEmail());
+            throw new AuthenticationException("Invalid user credentials");
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage(), 400));
+            log.error("User login failed for email {}: {}", request.getEmail(), e.getMessage());
+            throw e; // Let GlobalExceptionHandler handle it
         }
     }
 
     @PostMapping("/login/merchant")
     public ResponseEntity<?> loginMerchant(@RequestBody MerchantLoginRequest request) {
+        log.info("Attempting merchant login for email: {}", request.getEmail());
+
         try {
             MerchantDetailsResponse response = webClientBuilder.build()
                 .post()
@@ -81,16 +92,17 @@ public class AuthLoginController {
                 .retrieve()
                 .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
                     res -> res.bodyToMono(ErrorResponse.class)
-                        .flatMap(error -> Mono.error(new RuntimeException(error.getMessage())))
+                        .flatMap(error -> Mono.error(new AuthenticationException(error.getMessage())))
                 )
                 .bodyToMono(MerchantDetailsResponse.class)
                 .block();
 
             if (response != null) {
-                // Generate JWT cookie
                 ResponseCookie jwtCookie = jwtService.generateJwtCookie(
-                    response.getId(), request.getEmail(), response.getRole() // Assuming MerchantDetailsResponse also has a getRole() method
+                    response.getId(), request.getEmail(), response.getRole()
                 );
+
+                log.info("Merchant login successful for email: {}", request.getEmail());
 
                 return ResponseEntity.ok()
                         .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
@@ -100,15 +112,18 @@ public class AuthLoginController {
                         ));
             }
 
-            throw new RuntimeException("Invalid merchant credentials");
+            log.warn("Invalid merchant credentials for email: {}", request.getEmail());
+            throw new AuthenticationException("Invalid merchant credentials");
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage(), 400));
+            log.error("Merchant login failed for email {}: {}", request.getEmail(), e.getMessage());
+            throw e;
         }
     }
-    
 
     @PostMapping("/login/admin")
     public ResponseEntity<?> loginAdmin(@RequestBody AdminLoginRequest request) {
+        log.info("Attempting admin login for email: {}", request.getEmail());
+
         try {
             AdminDetailsResponse response = webClientBuilder.build()
                 .post()
@@ -117,16 +132,17 @@ public class AuthLoginController {
                 .retrieve()
                 .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
                     res -> res.bodyToMono(ErrorResponse.class)
-                        .flatMap(error -> Mono.error(new RuntimeException(error.getMessage())))
+                        .flatMap(error -> Mono.error(new AuthenticationException(error.getMessage())))
                 )
                 .bodyToMono(AdminDetailsResponse.class)
                 .block();
 
             if (response != null) {
-                // Generate JWT cookie
                 ResponseCookie jwtCookie = jwtService.generateJwtCookie(
-                    response.getId(), request.getEmail(), response.getRole() // Assuming AdminDetailsResponse also has a getRole() method
+                    response.getId(), request.getEmail(), response.getRole()
                 );
+
+                log.info("Admin login successful for email: {}", request.getEmail());
 
                 return ResponseEntity.ok()
                         .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
@@ -136,9 +152,11 @@ public class AuthLoginController {
                         ));
             }
 
-            throw new RuntimeException("Invalid admin credentials");
+            log.warn("Invalid admin credentials for email: {}", request.getEmail());
+            throw new AuthenticationException("Invalid admin credentials");
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage(), 400));
+            log.error("Admin login failed for email {}: {}", request.getEmail(), e.getMessage());
+            throw e;
         }
     }
-}
+}   

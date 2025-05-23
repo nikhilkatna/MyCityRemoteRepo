@@ -1,15 +1,12 @@
 package com.mycity.review.serviceImpl;
 
-import com.mycity.review.entity.Review;
-import com.mycity.review.exception.*;
-import com.mycity.review.repository.ReviewRepository;
-import com.mycity.review.service.ReviewServiceInterface;
-import com.mycity.shared.reviewdto.ReviewDTO;
-import com.mycity.shared.reviewdto.ReviewSummaryDTO;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,12 +15,19 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import reactor.core.publisher.Mono;
+import com.mycity.review.entity.Review;
+import com.mycity.review.exception.InvalidPlaceException;
+import com.mycity.review.exception.InvalidUserException;
+import com.mycity.review.exception.MediaServiceException;
+import com.mycity.review.exception.PlaceServiceUnavailableException;
+import com.mycity.review.exception.ReviewNotFoundException;
+import com.mycity.review.exception.UserServiceUnavailableException;
+import com.mycity.review.repository.ReviewRepository;
+import com.mycity.review.service.ReviewServiceInterface;
+import com.mycity.shared.reviewdto.ReviewDTO;
+import com.mycity.shared.reviewdto.ReviewSummaryDTO;
 
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import reactor.core.publisher.Mono;
 
 @Service
 public class ReviewServiceimpl implements ReviewServiceInterface {
@@ -151,30 +155,40 @@ public class ReviewServiceimpl implements ReviewServiceInterface {
     }
 
     @Override
-    public String updateReview(Long reviewId, ReviewDTO dto) {
+    public ResponseEntity<String> updateReview(Long reviewId, ReviewDTO dto) {
         logger.info("Updating review with ID: {}", reviewId);
         Optional<Review> opt = reviewRepo.findById(reviewId);
 
         if (opt.isPresent()) {
             Review review = opt.get();
+
             if (dto.getReviewDescription() != null && !dto.getReviewDescription().trim().isEmpty()) {
                 review.setReviewDescription(dto.getReviewDescription());
+            } else {
+                logger.warn("Invalid review description for update on ID: {}", reviewId);
+                return ResponseEntity.badRequest().body("Review description must not be empty.");
             }
 
             reviewRepo.save(review);
             logger.info("Review updated successfully for ID: {}", reviewId);
-            return "Review With Id " + reviewId + " Updated.";
+            return ResponseEntity.ok("Review With Id " + reviewId + " Updated.");
         } else {
             logger.warn("Review not found: {}", reviewId);
-            throw new ReviewNotFoundException("Review not found with ID " + reviewId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Review not found with ID " + reviewId);
         }
     }
 
+
     @Override
-    public List<ReviewSummaryDTO> getUserReview(Long placeId) {
+    public ResponseEntity<List<ReviewSummaryDTO>> getUserReview(Long placeId) {
         logger.info("Fetching reviews for placeId: {}", placeId);
         List<Review> reviews = reviewRepo.findByPlaceId(placeId);
         List<ReviewSummaryDTO> dtos = new ArrayList<>();
+
+        if (reviews.isEmpty()) {
+            logger.warn("No reviews found for placeId: {}", placeId);
+            return ResponseEntity.status(HttpStatus.NO_CONTENT).body(dtos); // Return empty list with 200 OK
+        }
 
         for (Review r : reviews) {
             ReviewSummaryDTO dto = new ReviewSummaryDTO();
@@ -185,14 +199,18 @@ public class ReviewServiceimpl implements ReviewServiceInterface {
             dto.setRating(null); // placeholder if rating needed
             dto.setUserImageUrl(mediaService.getImageUrlByPlaceId(r.getPlaceId()));
             dtos.add(dto);
+            
+            System.out.println("Dto ::"+dto);
         }
 
-        logger.info("Total reviews found: {}", dtos.size());
-        return dtos;
+        logger.info("Total reviews found for placeId {}: {}", placeId, dtos.size());
+        return ResponseEntity.ok(dtos);
     }
 
+
+
     @Override
-    public String deleteReview(Long reviewId) {
+    public ResponseEntity<String> deleteReview(Long reviewId) {
         logger.info("Deleting review with ID: {}", reviewId);
         Optional<Review> opt = reviewRepo.findById(reviewId);
 
@@ -200,12 +218,16 @@ public class ReviewServiceimpl implements ReviewServiceInterface {
             reviewRepo.deleteById(reviewId);
             String result = mediaService.deleteImagesForReviews(reviewId);
             logger.info("Review and associated images deleted successfully");
-            return "Review & " + result;
+            // Return success message with 200 OK
+            return ResponseEntity.ok("Review & " + result);
         } else {
             logger.warn("Review not found for deletion: {}", reviewId);
-            throw new ReviewNotFoundException("Review not found with ID " + reviewId);
+            // Return 404 Not Found with message instead of throwing exception
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body("Review not found with ID " + reviewId);
         }
     }
+
 
     @Override
     public List<ReviewDTO> fetchReviews(Long placeId) {

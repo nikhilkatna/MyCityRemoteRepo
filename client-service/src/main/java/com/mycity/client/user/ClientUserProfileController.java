@@ -1,7 +1,6 @@
 package com.mycity.client.user;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -23,6 +22,7 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import com.mycity.client.config.CookieTokenExtractor;
+import com.mycity.client.exception.ClientException;
 import com.mycity.shared.userdto.UserDTO;
 import com.mycity.shared.userdto.UserLoginRequest;
 
@@ -34,37 +34,32 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/client")
 @RequiredArgsConstructor
 @Slf4j
-public class ClientUserProfileController
-{
+public class ClientUserProfileController {
+
     private final WebClient.Builder webClientBuilder;
     private final CookieTokenExtractor cookieTokenExtractor;
 
-    private static final Logger logger = LoggerFactory.getLogger(ClientUserProfileController.class);
-
     private static final String API_GATEWAY_SERVICE_NAME = "API-GATEWAY";
     private static final String USER_PROFILE_PATH_ON_GATEWAY = "/user/profile";
-    private static final String USER_ID_FINDING_PATH="/user/getuserId/{userName}";
-    private static final String USER_UPDATING_PATH="/user/updateuser/{userId}";
-    private static final String USER_DELETING_PATH="/user/deleteuser/{userId}";
-    private static final String USER_PASSWORD_CHANGING_PATH="/user/updatepassword";
-    
+    private static final String USER_ID_FINDING_PATH = "/user/getuserId/{userName}";
+    private static final String USER_UPDATING_PATH = "/user/updateuser/{userId}";
+    private static final String USER_DELETING_PATH = "/user/deleteuser/{userId}";
+    private static final String USER_PASSWORD_CHANGING_PATH = "/user/updatepassword";
     private static final String USER_PROFILE_PICTURE = "/user/profile/upload-picture"; 
-    
     private static final String USER_GET_PROFILE_PICTURE = "/user/profile-picture";
-    
-    
+
     @PostMapping("/upload-picture")
     public Mono<ResponseEntity<String>> uploadProfilePicture(
-    		 @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie,
+            @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie,
             @RequestParam("image") MultipartFile imageFile) {
-    	
-    	// Extract token using the injected CookieTokenExtractor
+
         String token = cookieTokenExtractor.extractTokenFromCookie(cookie);
+        log.info("Uploading profile picture...");
 
         MultipartBodyBuilder builder = new MultipartBodyBuilder();
         builder.part("image", imageFile.getResource())
-               .filename(imageFile.getOriginalFilename())
-               .contentType(MediaType.valueOf(imageFile.getContentType()));
+                .filename(imageFile.getOriginalFilename())
+                .contentType(MediaType.valueOf(imageFile.getContentType()));
 
         return webClientBuilder.build()
                 .post()
@@ -73,132 +68,139 @@ public class ClientUserProfileController
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(BodyInserters.fromMultipartData(builder.build()))
                 .retrieve()
-                .toEntity(String.class);
+                .toEntity(String.class)
+                .doOnSuccess(res -> log.info("✅ Profile picture uploaded successfully"))
+                .doOnError(e -> log.error("❌ Failed to upload profile picture", e))
+                .onErrorMap(e -> new ClientException("Error uploading profile picture", e));
     }
-    
+
     @GetMapping("/profile-picture")
     public Mono<ResponseEntity<String>> getProfilePicture(@RequestHeader(HttpHeaders.COOKIE) String cookie) {
-    	
-    	// Extract token using the injected CookieTokenExtractor
         String token = cookieTokenExtractor.extractTokenFromCookie(cookie);
-        
+        log.info("Fetching profile picture...");
+
         return webClientBuilder.build()
                 .get()
-                .uri("lb://"+API_GATEWAY_SERVICE_NAME + USER_GET_PROFILE_PICTURE)  // no userId in path
+                .uri("lb://" + API_GATEWAY_SERVICE_NAME + USER_GET_PROFILE_PICTURE)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .retrieve()
-                .toEntity(String.class);
+                .toEntity(String.class)
+                .doOnSuccess(res -> log.info("✅ Profile picture fetched"))
+                .doOnError(e -> log.error("❌ Failed to fetch profile picture", e))
+                .onErrorMap(e -> new ClientException("Error fetching profile picture", e));
     }
 
-
-    
     @GetMapping("/profile/user")
     public Mono<ResponseEntity<String>> getUserProfile(
             @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie) {
 
-        // Extract token using the injected CookieTokenExtractor
         String token = cookieTokenExtractor.extractTokenFromCookie(cookie);
-
         if (token == null || token.isEmpty()) {
-            logger.error("❌ Missing Authorization token from cookie");
-            return Mono.just(ResponseEntity.status(400).body("Authorization token is missing"));
+            log.warn("❌ Missing Authorization token from cookie");
+            return Mono.just(ResponseEntity.badRequest().body("Authorization token is missing"));
         }
 
-        logger.info("📩 Forwarding Authorization token to API Gateway: {}", token);
-        System.out.println(token);
+        log.info("📩 Fetching user profile using token: {}", token);
 
         return webClientBuilder.build()
                 .get()
                 .uri("lb://" + API_GATEWAY_SERVICE_NAME + USER_PROFILE_PATH_ON_GATEWAY)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)  // Forward token to API Gateway
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .retrieve()
                 .toEntity(String.class)
-                .map(response -> {
-                    logger.info("✅ Received response from API Gateway with status: {}", response.getStatusCode());
-                    return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
-                })
-                .onErrorResume(ex -> {
-                    logger.error("❌ Error forwarding to API Gateway: {}", ex.getMessage());
-                    return Mono.just(ResponseEntity.status(500).body("Something went wrong."));
-                });
+                .doOnSuccess(res -> log.info("✅ User profile fetched with status: {}", res.getStatusCode()))
+                .doOnError(e -> log.error("❌ Failed to fetch user profile", e))
+                .onErrorMap(e -> new ClientException("Error fetching user profile", e));
     }
-    
+
     @GetMapping("/getid/{userName}")
-	public Mono<String> getUserId(@PathVariable String userName,@RequestHeader(value = HttpHeaders.COOKIE) String cookie) 
-    {
-		System.out.println("ClientUserProfileController.getUserId()");
-		//Using CookieTokenExtractor to get Token From the cookie
-		String token=cookieTokenExtractor.extractTokenFromCookie(cookie);
-	    return webClientBuilder.build()
-	            .get()
-	            .uri("lb://" +API_GATEWAY_SERVICE_NAME + USER_ID_FINDING_PATH,userName)
-	            .header(HttpHeaders.AUTHORIZATION,"Bearer "+token)
-	            .retrieve()
-	            .onStatus(HttpStatusCode::isError, clientResponse ->
-	                    clientResponse.bodyToMono(String.class)
-	                            .flatMap(errorBody -> Mono.error(new RuntimeException("Failed to Add Place: " + clientResponse.statusCode() + " - " + errorBody))))
-	            .bodyToMono(String.class)
-	            .onErrorResume(e -> Mono.just("Failed to Fetch User Id: " + e.getMessage()));
-	}
-    
-	@PutMapping("/updateuser/{userId}")
-	public Mono<String> updateUser(@PathVariable  String userId,@RequestBody UserDTO dto,
-			@RequestHeader (value=HttpHeaders.COOKIE,required=false) String cookie) 
-	{
-		System.out.println("ClientUserProfileController.updateUser()");
-		//using CookieTokenExtractor to Extract Token from Cookie
-		String token=cookieTokenExtractor.extractTokenFromCookie(cookie);
-	    return webClientBuilder.build()
-	            .put()
-	            .uri("lb://" +API_GATEWAY_SERVICE_NAME + USER_UPDATING_PATH,userId)
-	            .bodyValue(dto)
-	            .header(HttpHeaders.AUTHORIZATION,"Bearer "+ token)
-	            .retrieve()
-	            .onStatus(HttpStatusCode::isError, clientResponse ->
-	                    clientResponse.bodyToMono(String.class)
-	                            .flatMap(errorBody -> Mono.error(new RuntimeException("Failed to Update User: " + clientResponse.statusCode() + " - " + errorBody))))
-	            .bodyToMono(String.class)
-	            .onErrorResume(e -> Mono.just("Failed to UPDATE User: " + e.getMessage()));
-	}
-	
+    public Mono<String> getUserId(@PathVariable String userName,
+                                  @RequestHeader(value = HttpHeaders.COOKIE) String cookie) {
+        String token = cookieTokenExtractor.extractTokenFromCookie(cookie);
+        log.info("🔍 Fetching user ID for username: {}", userName);
+
+        return webClientBuilder.build()
+                .get()
+                .uri("lb://" + API_GATEWAY_SERVICE_NAME + USER_ID_FINDING_PATH, userName)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, res ->
+                        res.bodyToMono(String.class)
+                                .flatMap(body -> {
+                                    log.error("❌ Error fetching user ID: {}", body);
+                                    return Mono.error(new ClientException("Failed to fetch User ID: " + body));
+                                }))
+                .bodyToMono(String.class)
+                .doOnSuccess(id -> log.info("✅ User ID fetched: {}", id))
+                .doOnError(e -> log.error("❌ Exception fetching user ID", e));
+    }
+
+    @PutMapping("/updateuser/{userId}")
+    public Mono<String> updateUser(@PathVariable String userId,
+                                   @RequestBody UserDTO dto,
+                                   @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie) {
+        String token = cookieTokenExtractor.extractTokenFromCookie(cookie);
+        log.info("🛠️ Updating user with ID: {}", userId);
+
+        return webClientBuilder.build()
+                .put()
+                .uri("lb://" + API_GATEWAY_SERVICE_NAME + USER_UPDATING_PATH, userId)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .bodyValue(dto)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, res ->
+                        res.bodyToMono(String.class)
+                                .flatMap(body -> {
+                                    log.error("❌ Error updating user: {}", body);
+                                    return Mono.error(new ClientException("Failed to update user: " + body));
+                                }))
+                .bodyToMono(String.class)
+                .doOnSuccess(response -> log.info("✅ User updated successfully"))
+                .doOnError(e -> log.error("❌ Exception updating user", e));
+    }
+
     @DeleteMapping("/deleteUser/{userId}")
-	public Mono<String> deleteUserById(@PathVariable String userId,@RequestHeader(value=HttpHeaders.COOKIE,required = false) String Cookie) 
-    {
-	    System.out.println("ClientUserProfileController.deleteUserById()");
-	    //using cookieTokenExtractor to Extract Token from Cookie
-	    String token=cookieTokenExtractor.extractTokenFromCookie(Cookie);
-	    return webClientBuilder.build()
-	            .delete()
-	            .uri("lb://" +API_GATEWAY_SERVICE_NAME + USER_DELETING_PATH,userId)
-	            .header(HttpHeaders.AUTHORIZATION,"Bearer "+ token)
-	            .retrieve()                                                 
-	            .onStatus(HttpStatusCode::isError, clientResponse ->
-	                    clientResponse.bodyToMono(String.class)
-	                            .flatMap(errorBody -> Mono.error(new RuntimeException("Failed to Delete User: " + clientResponse.statusCode() + " - " + errorBody))))
-	            .bodyToMono(String.class)
-	            .onErrorResume(e -> Mono.just("Failed to Delete User: " + e.getMessage()));
-	}
-    
-	@PatchMapping("/updatepassword")
-	public Mono<String> updateUserPassword(@RequestBody UserLoginRequest request
-			,@RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie) 
-	{
-		System.out.println("ClientUserProfileController.updateUserPassword()");
-		String token = cookieTokenExtractor.extractTokenFromCookie(cookie);
-	    return webClientBuilder.build()
-	            .patch()
-	            .uri("lb://" +API_GATEWAY_SERVICE_NAME + USER_PASSWORD_CHANGING_PATH)
-	            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-	            .bodyValue(request)
-	            .retrieve()
-	            .onStatus(HttpStatusCode::isError, clientResponse ->
-	                    clientResponse.bodyToMono(String.class)
-	                            .flatMap(errorBody -> Mono.error(new RuntimeException("Failed to Update User Password: " + clientResponse.statusCode() + " - " + errorBody))))
-	            .bodyToMono(String.class)
-	            .onErrorResume(e -> Mono.just("Failed to UPDATE User Password: " + e.getMessage()));
-	}
-	
-	
-	
-    
+    public Mono<String> deleteUserById(@PathVariable String userId,
+                                       @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie) {
+        String token = cookieTokenExtractor.extractTokenFromCookie(cookie);
+        log.info("🗑️ Deleting user with ID: {}", userId);
+
+        return webClientBuilder.build()
+                .delete()
+                .uri("lb://" + API_GATEWAY_SERVICE_NAME + USER_DELETING_PATH, userId)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, res ->
+                        res.bodyToMono(String.class)
+                                .flatMap(body -> {
+                                    log.error("❌ Error deleting user: {}", body);
+                                    return Mono.error(new ClientException("Failed to delete user: " + body));
+                                }))
+                .bodyToMono(String.class)
+                .doOnSuccess(response -> log.info("✅ User deleted successfully"))
+                .doOnError(e -> log.error("❌ Exception deleting user", e));
+    }
+
+    @PatchMapping("/updatepassword")
+    public Mono<String> updateUserPassword(@RequestBody UserLoginRequest request,
+                                           @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie) {
+        String token = cookieTokenExtractor.extractTokenFromCookie(cookie);
+        log.info("🔒 Updating user password");
+
+        return webClientBuilder.build()
+                .patch()
+                .uri("lb://" + API_GATEWAY_SERVICE_NAME + USER_PASSWORD_CHANGING_PATH)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .bodyValue(request)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, res ->
+                        res.bodyToMono(String.class)
+                                .flatMap(body -> {
+                                    log.error("❌ Error updating password: {}", body);
+                                    return Mono.error(new ClientException("Failed to update password: " + body));
+                                }))
+                .bodyToMono(String.class)
+                .doOnSuccess(response -> log.info("✅ Password updated successfully"))
+                .doOnError(e -> log.error("❌ Exception updating password", e));
+    }
 }

@@ -10,6 +10,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
+import com.mycity.shared.responsedto.OTPResponse;
+
 
 
 @ControllerAdvice
@@ -49,6 +51,16 @@ public class GlobalExceptionHandler {
         String error = ex.getBindingResult().getFieldError().getDefaultMessage();
         return ResponseEntity.badRequest().body(Map.of("message", error));
     }
+    
+    @ExceptionHandler(OtpGenerationException.class)
+    public ResponseEntity<String> handleOtpGenerationException(OtpGenerationException ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("OTP generation failed: " + ex.getMessage());
+    }
 
+    @ExceptionHandler(OtpVerificationException.class)
+    public ResponseEntity<OTPResponse> handleOtpVerificationException(OtpVerificationException ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new OTPResponse("OTP verification error: " + ex.getMessage(), false));
+    }
 
 }

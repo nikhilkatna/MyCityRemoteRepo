@@ -1,5 +1,7 @@
 package com.mycity.auth.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -9,9 +11,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import com.mycity.auth.exception.EmailServiceException;
+import com.mycity.auth.exception.OtpServiceException;
 import com.mycity.shared.emaildto.RequestOtpDTO;
 import com.mycity.shared.emaildto.VerifyOtpDTO;
-import com.mycity.shared.errordto.ErrorResponse;
 import com.mycity.shared.responsedto.OTPResponse;
 
 import lombok.RequiredArgsConstructor;
@@ -21,16 +24,16 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class AuthOtpController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthOtpController.class);
+
     private final WebClient.Builder webClientBuilder;
 
     private static final String EMAIL_SERVICE_URL = "lb://EMAIL-SERVICE";
     private static final String OTP_SERVICE_URL = "lb://OTP-SERVICE";
-    
-   
 
-    //this is made up in the user service / direclty can be called using the email service 
     @PostMapping("/email/send")
     public ResponseEntity<?> sendOtp(@RequestBody RequestOtpDTO request) {
+        log.info("Received OTP send request for email: {}", request.getEmail());
         try {
             String response = webClientBuilder.build()
                 .post()
@@ -40,22 +43,21 @@ public class AuthOtpController {
                 .bodyToMono(String.class)
                 .block();
 
+            log.info("OTP send successful for email: {}", request.getEmail());
             return ResponseEntity.ok(response);
 
         } catch (WebClientResponseException e) {
-            return ResponseEntity
-                .status(e.getStatusCode())
-                .body(new ErrorResponse("Email service error: " + e.getResponseBodyAsString(), e.getStatusCode().value()));
-
+            log.error("Email service error for email {}: status={}, body={}", request.getEmail(), e.getStatusCode(), e.getResponseBodyAsString());
+            throw new EmailServiceException("Email service error: " + e.getResponseBodyAsString(), e);
         } catch (Exception e) {
-            return ResponseEntity
-                .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Failed to send OTP: " + e.getMessage(), 500));
+            log.error("Failed to send OTP for email {}: {}", request.getEmail(), e.getMessage(), e);
+            throw new EmailServiceException("Failed to send OTP: " + e.getMessage(), e);
         }
     }
-    
+
     @PostMapping("/otp/verifyotp")
     public ResponseEntity<?> verifyOtp(@RequestBody VerifyOtpDTO request) {
+        log.info("Received OTP verification request for email: {}", request.getEmail());
         try {
             OTPResponse response = webClientBuilder.build()
                 .post()
@@ -63,25 +65,21 @@ public class AuthOtpController {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(OTPResponse.class)
-                .block();  // Blocking call to get the response
+                .block();
 
             if (response.isOtpVerified()) {
+                log.info("OTP verified successfully for email: {}", request.getEmail());
                 return ResponseEntity.ok(response);
             } else {
+                log.warn("OTP verification failed for email: {}", request.getEmail());
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
             }
         } catch (WebClientResponseException e) {
-            return ResponseEntity.status(e.getStatusCode())
-                .body(new ErrorResponse("OTP service error: " + e.getResponseBodyAsString(), e.getStatusCode().value()));
+            log.error("OTP service error for email {}: status={}, body={}", request.getEmail(), e.getStatusCode(), e.getResponseBodyAsString());
+            throw new OtpServiceException("OTP service error: " + e.getResponseBodyAsString(), e);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Failed to verify OTP: " + e.getMessage(), 500));
+            log.error("Failed to verify OTP for email {}: {}", request.getEmail(), e.getMessage(), e);
+            throw new OtpServiceException("Failed to verify OTP: " + e.getMessage(), e);
         }
     }
-
-
-    
-    
-    
-    
 }

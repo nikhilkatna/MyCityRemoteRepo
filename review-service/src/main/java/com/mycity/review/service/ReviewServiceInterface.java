@@ -13,11 +13,11 @@ public interface ReviewServiceInterface {
 	
 	ResponseEntity<String> addPlaceReview(ReviewDTO dto,List<MultipartFile> images);
 
-	String updateReview(Long reviewId, ReviewDTO dto);
+	ResponseEntity<String> updateReview(Long reviewId, ReviewDTO dto);
 
-	List<ReviewSummaryDTO> getUserReview(Long placeId);
+	ResponseEntity<List<ReviewSummaryDTO>> getUserReview(Long placeId);
 
-	String deleteReview(Long reviewId);
+	ResponseEntity<String> deleteReview(Long reviewId);
 
 	List<ReviewDTO> fetchReviews(Long placeId);
 

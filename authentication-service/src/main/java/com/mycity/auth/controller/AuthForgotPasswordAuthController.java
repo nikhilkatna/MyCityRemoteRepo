@@ -1,8 +1,7 @@
 package com.mycity.auth.controller;
 
-
-
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import com.mycity.auth.exception.UserNotFoundException;
 import com.mycity.shared.emaildto.ForgotPasswordDTO;
 import com.mycity.shared.emaildto.ResetPasswordRequest;
 import com.mycity.shared.userdto.UserDetailsResponse;
@@ -23,82 +23,89 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/auth/forgot-password")
 @RequiredArgsConstructor
 public class AuthForgotPasswordAuthController {
-	
-	private final WebClient.Builder webClientBuilder;
 
-    // Use static final field for user service name and path
-    private static final String USER_SERVICE_NAME = "USER-SERVICE"; // Use the actual service ID
-    private static final String GET_USER_BY_EMAIL_PATH = "/users/details/by-email/{email}";
+    private static final Logger log = LoggerFactory.getLogger(AuthForgotPasswordAuthController.class);
 
+    private final WebClient.Builder webClientBuilder;
 
-    // This endpoint now directly checks if the user exists in the user-service
+    private static final String USER_SERVICE_NAME = "USER-SERVICE";
+    private static final String USER_BY_EMAIL_PATH = "/users/details/by-email";
+    private static final String RESET_PASSWORD_PATH = "/users/reset-password";
+
     @PostMapping("/initiate")
     public Mono<ResponseEntity<String>> initiateForgotPassword(@RequestBody ForgotPasswordDTO request) {
+        log.info("Initiating forgot password process for email: {}", request.getEmail());
+
         WebClient userServiceClient = webClientBuilder.baseUrl("lb://" + USER_SERVICE_NAME).build();
 
-        // Make a non-blocking call to check if the user exists
         return userServiceClient.get()
-//                .uri(GET_USER_BY_EMAIL_PATH, request.getEmail()) // Pass email as a URI variable
-        			.uri(uriBuilder -> uriBuilder
-        			    .path("/users/details/by-email")
-        			    .queryParam("email", request.getEmail())
-        			    .build())
+                .uri(uriBuilder -> uriBuilder
+                        .path(USER_BY_EMAIL_PATH)
+                        .queryParam("email", request.getEmail())
+                        .build())
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, response -> {
-                    // If user service returns 404, it means user not found.
+                    log.warn("4xx error from user-service for email {}: {}", request.getEmail(), response.statusCode());
                     if (response.statusCode() == HttpStatus.NOT_FOUND) {
-                        // Return a Mono error with a specific message for user not found
-                        return Mono.error(new RuntimeException("User with email " + request.getEmail() + " not found."));
-                    } else {
-                         // For other 4xx errors, propagate an exception with error body
-                         return response.bodyToMono(String.class).flatMap(errorBody ->
-                            Mono.error(new RuntimeException("Error from user service (" + response.statusCode() + "): " + errorBody)));
+                        return Mono.error(new UserNotFoundException("User with email " + request.getEmail() + " not found."));
                     }
+                    return response.bodyToMono(String.class).flatMap(errorBody -> {
+                        log.error("Client error from user-service: {}", errorBody);
+                        return Mono.error(new RuntimeException("Client error: " + errorBody));
+                    });
                 })
-                 .onStatus(HttpStatusCode::is5xxServerError, response ->
-                     // Handle 5xx server errors from user service
-                     response.bodyToMono(String.class).flatMap(errorBody ->
-                            Mono.error(new RuntimeException("Server error from user service (" + response.statusCode() + "): " + errorBody))))
-                .bodyToMono(UserDetailsResponse.class) // Expecting UserDetail if found
+                .onStatus(HttpStatusCode::is5xxServerError, response -> {
+                    log.error("5xx error from user-service for email {}: {}", request.getEmail(), response.statusCode());
+                    return response.bodyToMono(String.class).flatMap(errorBody ->
+                            Mono.error(new RuntimeException("Server error from user-service: " + errorBody)));
+                })
+                .bodyToMono(UserDetailsResponse.class)
                 .map(userDetail -> {
-                    // If we reach here, the user was found (2xx response)
+                    log.info("User found for email {}. Proceeding with OTP flow.", request.getEmail());
                     return ResponseEntity.ok("User found. Proceed with OTP.");
                 })
                 .onErrorResume(RuntimeException.class, e -> {
-                    // Handle the exceptions thrown in onStatus or other errors
-                    if (e.getMessage() != null && e.getMessage().contains("User with email")) {
-                         // Specific handling for user not found error from onStatus
+                    log.error("Error during forgot password initiation: {}", e.getMessage(), e);
+                    if (e instanceof UserNotFoundException) {
                         return Mono.just(ResponseEntity.badRequest().body(e.getMessage()));
-                    } else {
-                         // Handle other runtime exceptions during the WebClient call
-                        return Mono.just(ResponseEntity.internalServerError().body("Error checking user existence: " + e.getMessage()));
                     }
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body("Error checking user existence: " + e.getMessage()));
                 });
     }
 
-    
     @PostMapping("/reset")
     public Mono<ResponseEntity<String>> resetPassword(@RequestBody ResetPasswordRequest request) {
+        log.info("Resetting password for user with Mail Id: {}", request.getEmail());
+
         WebClient userServiceClient = webClientBuilder.baseUrl("lb://" + USER_SERVICE_NAME).build();
 
         return userServiceClient.post()
-                .uri("/users/reset-password")
+                .uri(RESET_PASSWORD_PATH)
                 .bodyValue(request)
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, response ->
-                        response.bodyToMono(String.class).flatMap(errorBody ->
-                            Mono.error(new RuntimeException("Error from user service (4xx): " + errorBody))))
+                        response.bodyToMono(String.class).flatMap(errorBody -> {
+                            log.warn("Client error during password reset: {}", errorBody);
+                            return Mono.error(new RuntimeException("Client error: " + errorBody));
+                        }))
                 .onStatus(HttpStatusCode::is5xxServerError, response ->
-                        response.bodyToMono(String.class).flatMap(errorBody ->
-                            Mono.error(new RuntimeException("Error from user service (5xx): " + errorBody))))
-                .bodyToMono(String.class)  // <--- This line returns the actual body content
-                .map(body -> ResponseEntity.ok(body))
-                .onErrorResume(e ->
-                    Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                            .body("Password reset failed: " + e.getMessage())));
-    }
-
-
-	    
-
-}
+                        response.bodyToMono(String.class).flatMap(errorBody -> {
+                            log.error("Server error during password reset: {}", errorBody);
+                            return Mono.error(new RuntimeException("Server error: " + errorBody));
+                        }))
+                .bodyToMono(String.class)
+                .map(body -> {
+                    log.info("Password reset successful for user with Mail ID: {}", request.getEmail());
+                    return ResponseEntity.ok(body);
+                })
+                .onErrorResume(e -> {
+                    log.error("Password reset failed: {}", e.getMessage(), e);
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body("Password reset failed: " + e.getMessage()));
+                });
+    } 
+    
+    
+    
+ }

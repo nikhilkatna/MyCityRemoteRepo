@@ -13,8 +13,6 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,10 +28,12 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mycity.shared.reviewdto.ReviewDTO;
 import com.mycity.shared.reviewdto.ReviewSummaryDTO;
 
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/user/review")
+@Slf4j
 public class UserReviewController {
 
 	@Autowired
@@ -90,35 +90,68 @@ public class UserReviewController {
 
 	@GetMapping("/get/{placeId}")
 	public ResponseEntity<List<ReviewSummaryDTO>> getReviewByPlaceId(@PathVariable Long placeId) {
-		System.out.println("UserReviewController.getPlacesByReviewId()");
-		List<ReviewSummaryDTO> reviewList = webClientBuilder.build().get()
-				.uri("lb://" + REVIEW_SERVICE_NAME + REVIEWS_GETTING_PATH, placeId).retrieve()
-				.onStatus(HttpStatusCode::isError, clientResponse -> clientResponse.bodyToMono(String.class)
-						.flatMap(errorBody -> Mono.error(new RuntimeException(
-								"Failed to fetch Reviews: " + clientResponse.statusCode() + " - " + errorBody))))
-				.bodyToFlux(ReviewSummaryDTO.class).collectList().onErrorResume(e -> {
-					System.err.println("Error: " + e.getMessage());
-					return Mono.just(Collections.emptyList());
-				}).block();
+	    System.out.println("UserReviewController.getPlacesByReviewId()");
 
-		return new ResponseEntity<>(reviewList, HttpStatus.OK);
+	    WebClient client = webClientBuilder.build();
+
+	    ResponseEntity<List<ReviewSummaryDTO>> responseEntity = client.get()
+	            .uri("lb://" + REVIEW_SERVICE_NAME + REVIEWS_GETTING_PATH, placeId)
+	            .exchangeToMono(response -> {
+	                if (response.statusCode().is2xxSuccessful()) {
+	                    return response.bodyToFlux(ReviewSummaryDTO.class)
+	                            .collectList()
+	                            .map(body -> new ResponseEntity<>(body, response.statusCode()));
+	                } else {
+	                    return response.bodyToMono(String.class)
+	                            .defaultIfEmpty("Unknown error")
+	                            .map(errorBody -> {
+	                                System.err.println("Failed to fetch reviews: " + response.statusCode() + " - " + errorBody);
+	                                return new ResponseEntity<List<ReviewSummaryDTO>>(Collections.emptyList(), response.statusCode());
+	                            });
+	                }
+	            })
+	            .block(); // Blocking here to get ResponseEntity synchronously
+
+	    if (responseEntity == null) {
+	        // Defensive fallback
+	        return new ResponseEntity<>(Collections.emptyList(), HttpStatus.INTERNAL_SERVER_ERROR);
+	    }
+
+	    return responseEntity;
 	}
+
+
+
+
 
 	@DeleteMapping("/delete/{reviewId}")
 	public ResponseEntity<String> deleteReviewsByreviewId(@PathVariable Long reviewId) {
-		System.out.println("-------UserReviewController.deleteReviewsByreviewId()------");
-		String result = webClientBuilder.build().delete()
-				.uri("lb://" + REVIEW_SERVICE_NAME + REVIEW_DELETING_PATH, reviewId).retrieve()
-				.onStatus(HttpStatusCode::isError, clientResponse -> clientResponse.bodyToMono(String.class)
-						.flatMap(errorBody -> Mono.error(new RuntimeException(
-								"Failed to delete review: " + clientResponse.statusCode() + " - " + errorBody))))
-				.bodyToMono(String.class).onErrorResume(e -> {
-					System.err.println("Error: " + e.getMessage());
-					return Mono.just("Failed to delete review: " + e.getMessage());
-				}).block();
+	    System.out.println("-------UserReviewController.deleteReviewsByreviewId()------");
 
-		return new ResponseEntity<>(result, HttpStatus.OK);
+	    ResponseEntity<String> responseEntity = webClientBuilder.build()
+	        .delete()
+	        .uri("lb://" + REVIEW_SERVICE_NAME + REVIEW_DELETING_PATH, reviewId)
+	        .exchangeToMono(clientResponse ->
+	            clientResponse.bodyToMono(String.class)
+	                .defaultIfEmpty("")  // in case body is empty
+	                .map(body -> new ResponseEntity<>(body, clientResponse.statusCode()))
+	        )
+	        .onErrorResume(e -> {
+	            System.err.println("Error: " + e.getMessage());
+	            return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body("Failed to delete review: " + e.getMessage()));
+	        })
+	        .block();
+
+	    // Defensive null check
+	    if (responseEntity == null) {
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body("Failed to delete review: downstream service did not respond");
+	    }
+
+	    return responseEntity;
 	}
+
 
 	// GetUserReviews()
 

@@ -6,13 +6,19 @@ import com.mycity.client.exception.MediaServiceUnavailableException;
 import com.mycity.client.exception.PlaceNotFoundException;
 import com.mycity.client.exception.ReviewServiceUnavailableException;
 import com.mycity.client.exception.EventServiceUnavailableException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
@@ -24,6 +30,8 @@ public class ClientAboutPlaceDetailController {
     @Autowired
     private WebClient.Builder webClientBuilder;
 
+    private static final Logger logger = LoggerFactory.getLogger(ClientAboutPlaceDetailController.class);
+
     private static final String API_GATEWAY_SERVICE_NAME = "API-GATEWAY";
     private static final String PLACE_GETTING_PATH = "/place/about/{placeName}";
 
@@ -31,31 +39,35 @@ public class ClientAboutPlaceDetailController {
 
     @GetMapping("/about/place/{placeName}")
     public Mono<ResponseEntity<Map<String, Object>>> getPlaceDetails(@PathVariable String placeName) {
+        logger.info("Request to get place details for: {}", placeName);
+
         return webClientBuilder.build()
                 .get()
                 .uri("lb://" + API_GATEWAY_SERVICE_NAME + PLACE_GETTING_PATH, placeName)
                 .retrieve()
                 .toEntity(new ParameterizedTypeReference<Map<String, Object>>() {})
+                
+                .doOnSuccess(response -> 
+                    logger.info("Received successful response with status: {}", response.getStatusCode())
+                )
 
-                // 404 from place-service
+                // Handle 404 Not Found from place-service
                 .onErrorResume(WebClientResponseException.NotFound.class, ex -> {
-                    Map<String, Object> errorBody = Map.of(
-                            "error", "Not Found",
-                            "status", HttpStatus.NOT_FOUND.value(),
-                            "message", "Place not found: " + placeName
-                    );
-                    return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody));
+                    logger.warn("Place not found: {}", placeName);
+                    throw new PlaceNotFoundException("Place not found: " + placeName);
                 })
 
-                // Handle structured error response from place-service
+                // Handle other structured error responses
                 .onErrorResume(WebClientResponseException.class, ex -> {
+                    logger.error("Error response from place-service: status {}, body: {}", 
+                            ex.getStatusCode(), ex.getResponseBodyAsString());
+
                     try {
                         Map<String, Object> errorMap = objectMapper.readValue(
                                 ex.getResponseBodyAsString(),
                                 new TypeReference<>() {}
                         );
 
-                        // Optionally map specific errors to custom client exceptions
                         String errorType = (String) errorMap.get("error");
 
                         if ("Review Service Unavailable".equalsIgnoreCase(errorType)) {
@@ -66,28 +78,27 @@ public class ClientAboutPlaceDetailController {
                             throw new EventServiceUnavailableException((String) errorMap.get("message"));
                         }
 
-                        // Forward error as-is
+                        // If not one of the known error types, just return errorMap in response entity
                         return Mono.just(ResponseEntity.status(ex.getStatusCode()).body(errorMap));
-
                     } catch (Exception parseEx) {
-                        // Fallback in case of parse error
-                        Map<String, Object> fallback = Map.of(
-                                "error", "Failed to retrieve place details",
-                                "status", ex.getStatusCode().value(),
-                                "message", ex.getMessage()
-                        );
-                        return Mono.just(ResponseEntity.status(ex.getStatusCode()).body(fallback));
+                        logger.error("Failed to parse error response body", parseEx);
+                        return Mono.just(ResponseEntity.status(ex.getStatusCode()).body(
+                                Map.of(
+                                    "error", "Failed to retrieve place details",
+                                    "status", ex.getStatusCode().value(),
+                                    "message", ex.getMessage()
+                                )));
                     }
                 })
 
-                // Handle any other unexpected errors
                 .onErrorResume(Exception.class, ex -> {
-                    Map<String, Object> errorBody = Map.of(
-                            "error", "Internal Server Error",
-                            "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                            "message", ex.getMessage()
-                    );
-                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorBody));
+                    logger.error("Unexpected error while retrieving place details", ex);
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                            Map.of(
+                                    "error", "Internal Server Error",
+                                    "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                                    "message", ex.getMessage()
+                            )));
                 });
     }
 }

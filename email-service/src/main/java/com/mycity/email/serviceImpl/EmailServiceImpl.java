@@ -11,52 +11,45 @@ import org.springframework.stereotype.Service;
 
 import com.mycity.email.Exception.ExpiredOtpException;
 import com.mycity.email.Exception.InvalidOtpException;
+import com.mycity.email.Exception.OtpGenerationException;
 import com.mycity.email.service.EmailService;
 
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 public class EmailServiceImpl implements EmailService {
 
-	@Autowired
-	private JavaMailSender mailSender;
-	
-	@Autowired
+    @Autowired
+    private JavaMailSender mailSender;
+
+    @Autowired
     private RedisTemplate<String, String> redisTemplate;
 
     private static final String OTP_PREFIX = "otp:";
     private static final int OTP_LENGTH = 4;
     private static final long OTP_EXPIRY_MINUTES = 10;
 
-    // Generate OTP and send it via email
+    @Override
     public void generateAndSendOTP(String recipientEmail) {
-        String otp = generateRandomOTP(OTP_LENGTH);
-        
-        System.err.println("generated otp: " + otp);
-        
-        System.err.println("generated otp for email : " + recipientEmail);
-        
+        try {
+            String otp = generateRandomOTP(OTP_LENGTH);
+            log.info("Generated OTP: {} for email: {}", otp, recipientEmail);
 
-        // Store OTP in Redis with an expiry time
-        String redisKey = OTP_PREFIX + recipientEmail;
-        redisTemplate.opsForValue().set(redisKey, otp, OTP_EXPIRY_MINUTES, TimeUnit.MINUTES);
-        
-        String storedOtp = redisTemplate.opsForValue().get("otp:" + recipientEmail); // Ensure the key format matches
-        Long ttl = redisTemplate.getExpire("otp:" + recipientEmail); // Check TTL
-        
-        System.err.println("this is stored otp in redis :" + storedOtp);
+            String redisKey = OTP_PREFIX + recipientEmail;
+            redisTemplate.opsForValue().set(redisKey, otp, OTP_EXPIRY_MINUTES, TimeUnit.MINUTES);
 
-        // Send OTP via email
-        sendOTPEmail(recipientEmail, otp);
+            log.info("Stored OTP '{}' in Redis with key: {}, TTL: {} minutes",
+                    otp, redisKey, OTP_EXPIRY_MINUTES);
+
+            sendOTPEmail(recipientEmail, otp);
+            log.info("OTP email sent to: {}", recipientEmail);
+        } catch (Exception e) {
+            log.error("Error generating/sending OTP to {}: {}", recipientEmail, e.getMessage(), e);
+            throw new OtpGenerationException("Failed to generate/send OTP. Please try again later.");
+        }
     }
 
-//    // Helper method to generate a random 6-digit OTP
-//    private String generateOtp() {
-//        int otp = (int) (Math.random() * 1000000); // Generate a 6-digit random number
-//        return String.format("%06d", otp);         // Pad with leading zeros if needed
-//    }
-    
-      
-    // Send OTP via email
     private void sendOTPEmail(String toEmail, String otp) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(toEmail);
@@ -65,52 +58,42 @@ public class EmailServiceImpl implements EmailService {
         mailSender.send(message);
     }
 
-
-    // Generate a random OTP of a specified length
     private String generateRandomOTP(int length) {
         Random random = new Random();
         StringBuilder otp = new StringBuilder();
         for (int i = 0; i < length; i++) {
-            otp.append(random.nextInt(10)); // Add a random digit to the OTP
+            otp.append(random.nextInt(10));
         }
         return otp.toString();
     }
 
-	@Override
-	public boolean verifyOTP(String email, String otp) {
-		
-		
-		String redisKey = "otp:" + email;
+    @Override
+    public boolean verifyOTP(String email, String otp) {
+        String redisKey = OTP_PREFIX + email;
         String storedOtp = redisTemplate.opsForValue().get(redisKey);
         Long ttl = redisTemplate.getExpire(redisKey);
-        
-        System.err.println("OTP verification for email: " + email);
-        System.err.println("Redis key used: " + redisKey);
-        System.err.println("Stored OTP: " + storedOtp);
-        System.err.println("TTL of OTP: " + ttl);
-        
+
+        log.info("Verifying OTP for email: {}", email);
+        log.debug("Stored OTP: {}, TTL: {}", storedOtp, ttl);
+
         if (storedOtp == null) {
+            log.warn("OTP not found or expired for email: {}", email);
             throw new ExpiredOtpException("OTP expired or not found.");
         }
 
         if (ttl == null || ttl <= 0) {
             redisTemplate.delete(redisKey);
+            log.warn("OTP TTL expired for email: {}", email);
             throw new ExpiredOtpException("OTP expired.");
         }
 
         if (!storedOtp.equals(otp)) {
+            log.warn("OTP mismatch for email: {}. Provided: {}, Stored: {}", email, otp, storedOtp);
             throw new InvalidOtpException("OTP does not match.");
         }
 
-        redisTemplate.delete(redisKey); // Remove OTP after successful verification
-        
+        redisTemplate.delete(redisKey);
+        log.info("OTP verified and deleted for email: {}", email);
         return true;
     }
-		
-	
-
-	
-
-  
-
 }

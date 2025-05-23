@@ -37,20 +37,24 @@ public class PlaceReviewController {
 	@PutMapping("/updatereview/{reviewId}")
 	public ResponseEntity<String> updateReview(@PathVariable Long reviewId, @RequestBody ReviewDTO dto) {
 		// use service
-		return new ResponseEntity<String>(service.updateReview(reviewId, dto), HttpStatus.OK);
+		ResponseEntity<String> response=service.updateReview(reviewId, dto);
+		return response;
 	}
 
-	@GetMapping("/getreviews/{placeId}")
+	@GetMapping(value="/getreviews/{placeId}")
 	public ResponseEntity<List<ReviewSummaryDTO>> getAllReviews(@PathVariable Long placeId) // gives list of review's
 																							// for a Particular place
 	{
-		return new ResponseEntity<List<ReviewSummaryDTO>>(service.getUserReview(placeId), HttpStatus.FOUND);
+		//use service
+		ResponseEntity<List<ReviewSummaryDTO>> response=service.getUserReview(placeId);
+		return response;
 	}
 
 	@DeleteMapping("/deletereview/{reviewId}")
 	public ResponseEntity<String> deleteReview(@PathVariable Long reviewId) {
-		System.out.println("=========PlaceReviewController.deleteReview()============");
-		return new ResponseEntity<String>(service.deleteReview(reviewId), HttpStatus.OK);
+		ResponseEntity<String> response=service.deleteReview(reviewId);
+		return response;
+		
 	}
 
 	@GetMapping("/place-reviews/{placeId}")
