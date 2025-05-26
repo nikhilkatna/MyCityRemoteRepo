@@ -10,6 +10,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,9 +33,11 @@ import com.mycity.shared.timezonedto.TimezoneDTO;
 import com.mycity.shared.tripplannerdto.CoordinateDTO;
 
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 
 @Service
+@Slf4j
 public class PlaceServiceImpl implements PlaceServiceInterface {
 
 	@Autowired
@@ -122,72 +128,144 @@ public class PlaceServiceImpl implements PlaceServiceInterface {
 
 	@Override
 	@Transactional
-	public PlaceResponseDTO getPlace(Long placeId) {
-		Place place = placeRepo.findById(placeId).orElseThrow(() -> new IllegalArgumentException("Invalid Place Id.."));
+	public ResponseEntity<PlaceResponseDTO> getPlace(Long placeId) {
+	    if (placeId == null || placeId <= 0) {
+	        return ResponseEntity.badRequest().build(); // or include a body with error message if needed
+	    }
 
-		return convertToDTO(place);
+	    Optional<Place> optionalPlace = placeRepo.findById(placeId);
+
+	    if (optionalPlace.isEmpty()) {
+	        return ResponseEntity.status(HttpStatus.NOT_FOUND).build(); // 404 Not Found
+	    }
+
+	    Place place = optionalPlace.get();
+	    PlaceResponseDTO dto=convertToDTO(place);
+	    return ResponseEntity.ok(dto); // Assuming convertToDTO returns ResponseEntity<PlaceResponseDTO>
 	}
 
 	@Override
 	@Transactional
-	public String updatePlace(Long placeId, PlaceDTO dto) {
-		validatePlaceDTO(dto);
+	public ResponseEntity<String> updatePlace(Long placeId, PlaceDTO dto) {
+	    try {
+	        // Validate incoming DTO
+	        validatePlaceDTO(dto);
 
-		Place place = placeRepo.findById(placeId).orElseThrow(() -> new IllegalArgumentException("Invalid Place Id.."));
+	        // Fetch existing place or return 404
+	        Optional<Place> optionalPlace = placeRepo.findById(placeId);
+	        if (optionalPlace.isEmpty()) {
+	            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+	                    .body("Place with ID " + placeId + " not found.");
+	        }
 
-		// Update Place Fields
-		place.setPlaceName(dto.getPlaceName().trim());
-		place.setAboutPlace(dto.getAboutPlace());
-		place.setPlaceHistory(dto.getPlaceHistory());
-		place.setPlaceDistrict(dto.getPlaceDistrict());
-		place.setRating(dto.getRating());
+	        Place place = optionalPlace.get();
 
-		// Update Category
-		CategoryDTO category = getCategory(dto);
-		place.setCategoryId(category.getCategoryId());
-		place.setCategoryName(category.getName());
+	        // Update place fields
+	        place.setPlaceName(dto.getPlaceName().trim());
+	        place.setAboutPlace(dto.getAboutPlace());
+	        place.setPlaceHistory(dto.getPlaceHistory());
+	        place.setPlaceDistrict(dto.getPlaceDistrict());
+	        place.setRating(dto.getRating());
 
-		// Update Coordinates
-		if (dto.getCoordinate() != null) {
-			Coordinate coordinate = place.getCoordinate();
-			if (coordinate == null) {
-				coordinate = new Coordinate();
-			}
-			coordinate.setLatitude(dto.getCoordinate().getLatitude());
-			coordinate.setLongitude(dto.getCoordinate().getLongitude());
-			place.setCoordinate(coordinate);
-		}
+	        // Update category
+	        CategoryDTO category = getCategory(dto);
+	        place.setCategoryId(category.getCategoryId());
+	        place.setCategoryName(category.getName());
 
-		// Update TimeZone
-		if (dto.getTimeZone() != null) {
-			TimeZone timezone = place.getTimeZone();
-			if (timezone == null) {
-				timezone = new TimeZone();
-				timezone.setPlace(place);
-			}
-			timezone.setOpeningTime(dto.getTimeZone().getOpeningTime());
-			timezone.setClosingTime(dto.getTimeZone().getClosingTime());
-			place.setTimeZone(timezone);
-		}
+	        // Update coordinates
+	        if (dto.getCoordinate() != null) {
+	            Coordinate coordinate = place.getCoordinate();
+	            if (coordinate == null) {
+	                coordinate = new Coordinate();
+	            }
+	            coordinate.setLatitude(dto.getCoordinate().getLatitude());
+	            coordinate.setLongitude(dto.getCoordinate().getLongitude());
+	            place.setCoordinate(coordinate);
+	        }
 
-		// Save Updated Place
-		placeRepo.save(place);
+	        // Update timezone
+	        if (dto.getTimeZone() != null) {
+	            TimeZone timezone = place.getTimeZone();
+	            if (timezone == null) {
+	                timezone = new TimeZone();
+	                timezone.setPlace(place);
+	            }
+	            timezone.setOpeningTime(dto.getTimeZone().getOpeningTime());
+	            timezone.setClosingTime(dto.getTimeZone().getClosingTime());
+	            place.setTimeZone(timezone);
+	        }
 
-		return "Place with ID " + placeId + " updated successfully.";
+	        // Save updated place
+	        placeRepo.save(place);
+
+	        return ResponseEntity.ok("Place with ID " + placeId + " updated successfully.");
+	    } catch (IllegalArgumentException ex) {
+	        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+	                .body("Invalid data: " + ex.getMessage());
+	    } catch (Exception ex) {
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body("An unexpected error occurred: " + ex.getMessage());
+	    }
 	}
+
 
 	@Override
 	@Transactional
-	public String deletePlace(Long placeId) {
-		placeRepo.deleteById(placeId);
-		return "Place With Id ::" + placeId + " Deleted Successfully.";
+	public ResponseEntity<String> deletePlace(Long placeId) {
+		try
+		{
+			//Check Whether the With Given PlaceId Exists or not 
+		    Optional<Place> opt=placeRepo.findById(placeId);
+		    if(opt.isPresent())
+		    {
+		    	placeRepo.deleteById(placeId);
+		    	String message = "Place with name: " + opt.get().getPlaceName() + " has been deleted.";
+	            log.info(message);
+	            return ResponseEntity.ok(message);
+		    }
+		    else
+		    {
+		       String message="Place With Given Place Id :"+placeId+" Not Found";
+		       log.warn(message);
+		       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(message);
+		    }
+		}
+		
+		catch (DataAccessException dae) 
+		{
+	        log.error("Database error while deleting place with ID " + placeId, dae);
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+	                .body("Error deleting place due to database issues.");
+	    }
+		catch(Exception e )
+		{
+			 log.error("Unexpected error while deleting place with ID " + placeId, e);
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("An Unexpected Error Occured While Deleting the Place");
+		}
+		
 	}
 
 	@Override
-	public List<PlaceResponseDTO> getAllPlaces() {
-		List<Place> places = placeRepo.findAll();
-		return places.stream().map(this::convertToDTO).collect(Collectors.toList());
+	public ResponseEntity<List<PlaceResponseDTO>> getAllPlaces() {
+	    try {
+	        List<Place> places = placeRepo.findAll();
+
+	        if (places.isEmpty()) {
+	            // No content found
+	            return ResponseEntity.noContent().build(); // HTTP 204
+	        }
+
+	        List<PlaceResponseDTO> dtoList = places.stream()
+	                                               .map(this::convertToDTO)
+	                                               .collect(Collectors.toList());
+
+	        return ResponseEntity.ok(dtoList); // HTTP 200
+	    } catch (Exception e) {
+	        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build(); // HTTP 500
+	    }
 	}
+
+
 
 	@Override
 	public List<PlaceCategoryDTO> getAllDistinctCategories() {
@@ -218,6 +296,8 @@ public class PlaceServiceImpl implements PlaceServiceInterface {
 		dto.setCategoryName(place.getCategoryName());
 		dto.setPlaceDistrict(place.getPlaceDistrict());
 		dto.setRating(place.getRating());
+		dto.setClosingTime(place.getTimeZone().getClosingTime());
+		dto.setOpeningTime(place.getTimeZone().getOpeningTime());
 
 		if (place.getCoordinate() != null) {
 			dto.setLatitude(place.getCoordinate().getLatitude());

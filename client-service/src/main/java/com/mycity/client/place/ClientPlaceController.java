@@ -6,14 +6,25 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.MultipartBodyBuilder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -49,7 +60,7 @@ public class ClientPlaceController {
     private static final String PLACE_DETAILS_FINDING_PATH = "/place/get/{placeId}";
     private static final String PLACE_UPDATING_PATH = "/admin/updateplace/{placeId}";
     private static final String PLACE_DELETING_PATH = "/admin/deleteplace/{placeId}";
-    private static final String ALL_PLACES_FINDING_PATH = "/place/getall";
+    private static final String ALL_PLACES_FINDING_PATH = "/place/allplaces";
 
     @PostMapping(value = "/add", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<String> addPlace(
@@ -138,62 +149,84 @@ public class ClientPlaceController {
     }
 
     @PutMapping("/update/{placeId}")
-    public Mono<String> updatePlace(@PathVariable Long placeId, @RequestBody PlaceDTO dto) {
+    public Mono<ResponseEntity<String>> updatePlace(@PathVariable Long placeId, @RequestBody PlaceDTO dto) {
         log.info("Updating place with id: {}", placeId);
 
         return webClientBuilder.build()
                 .put()
                 .uri("lb://" + API_GATEWAY_SERVICE_NAME + PLACE_UPDATING_PATH, placeId)
-                .body(Mono.just(dto), PlaceDTO.class)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, clientResponse ->
-                    clientResponse.bodyToMono(String.class).flatMap(errorBody -> {
-                        log.error("Failed to update place: Status {} Body: {}", clientResponse.statusCode(), errorBody);
-                        return Mono.error(new ClientPlaceException("Failed to update place: " + clientResponse.statusCode() + " - " + errorBody));
-                    })
+                .bodyValue(dto)
+                .exchangeToMono(clientResponse ->
+                    clientResponse.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .map(body -> {
+                            HttpStatus status = HttpStatus.resolve(clientResponse.rawStatusCode());
+                            log.info("Downstream response status: {}, body: {}", status, body);
+                            return ResponseEntity.status(status != null ? status : HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+                        })
                 )
-                .bodyToMono(String.class)
-                .doOnSuccess(response -> log.info("Place updated successfully"))
                 .doOnError(e -> log.error("Error updating place: {}", e.getMessage()))
-                .onErrorResume(e -> Mono.just("Failed to UPDATE Place: " + e.getMessage()));
+                .onErrorResume(e ->
+                    Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body("Failed to update place: " + e.getMessage()))
+                );
     }
 
+
     @DeleteMapping("/deleteplace/{placeId}")
-    public Mono<String> deletePlaceById(@PathVariable Long placeId) {
+    public Mono<ResponseEntity<String>> deletePlaceById(@PathVariable Long placeId) {
         log.info("Deleting place with id: {}", placeId);
 
         return webClientBuilder.build()
                 .delete()
                 .uri("lb://" + API_GATEWAY_SERVICE_NAME + PLACE_DELETING_PATH, placeId)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, clientResponse ->
-                    clientResponse.bodyToMono(String.class).flatMap(errorBody -> {
-                        log.error("Failed to delete place: Status {} Body: {}", clientResponse.statusCode(), errorBody);
-                        return Mono.error(new ClientPlaceException("Failed to delete place: " + clientResponse.statusCode() + " - " + errorBody));
-                    })
+                .exchangeToMono(clientResponse ->
+                    clientResponse.bodyToMono(String.class)
+                            .defaultIfEmpty("")
+                            .map(body -> {
+                                HttpStatusCode statusCode = clientResponse.statusCode();
+                                if (statusCode.isError()) {
+                                    log.error("Failed to delete place: Status {} Body: {}", statusCode, body);
+                                } else {
+                                    log.info("Place deleted successfully: {}", body);
+                                }
+                                return ResponseEntity.status(statusCode).body(body);
+                            })
                 )
-                .bodyToMono(String.class)
-                .doOnSuccess(response -> log.info("Place deleted successfully"))
-                .doOnError(e -> log.error("Error deleting place: {}", e.getMessage()))
-                .onErrorResume(e -> Mono.just("Failed to Delete Place: " + e.getMessage()));
+                .onErrorResume(e -> {
+                    log.error("Error deleting place: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body("Failed to Delete Place: " + e.getMessage()));
+                });
     }
 
+
     @GetMapping("/getallplaces")
-    public Mono<List<PlaceDTO>> getAllPlaces() {
+    public Mono<ResponseEntity<List<PlaceDTO>>> getAllPlaces() {
         log.info("Getting all places");
 
         return webClientBuilder.build()
                 .get()
                 .uri("lb://" + API_GATEWAY_SERVICE_NAME + ALL_PLACES_FINDING_PATH)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, clientResponse ->
-                    clientResponse.bodyToMono(String.class).flatMap(errorBody -> {
-                        log.error("Failed to get all places: Status {} Body: {}", clientResponse.statusCode(), errorBody);
-                        return Mono.error(new ClientPlaceException("Failed to get list of places: " + clientResponse.statusCode() + " - " + errorBody));
-                    })
-                )
-                .bodyToMono(new ParameterizedTypeReference<List<PlaceDTO>>() {})
+                .exchangeToMono(clientResponse -> {
+                    HttpStatusCode statusCode = clientResponse.statusCode();
+                    HttpStatus status = (statusCode instanceof HttpStatus)
+                            ? (HttpStatus) statusCode
+                            : HttpStatus.INTERNAL_SERVER_ERROR;
+
+                    return clientResponse.bodyToMono(new ParameterizedTypeReference<List<PlaceDTO>>() {})
+                            .defaultIfEmpty(Collections.emptyList())
+                            .map(body -> {
+                                log.info("Received {} places with status {}", body.size(), status);
+                                return ResponseEntity.status(status).body(body);
+                            });
+                })
                 .doOnError(e -> log.error("Error getting all places: {}", e.getMessage()))
-                .onErrorResume(e -> Mono.just(Collections.emptyList()));
+                .onErrorResume(e -> {
+                    log.error("Handling error gracefully: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.emptyList()));
+                });
     }
+
+
 }

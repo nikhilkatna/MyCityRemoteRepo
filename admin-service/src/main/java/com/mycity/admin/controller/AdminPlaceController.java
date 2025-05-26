@@ -15,7 +15,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.MultipartBodyBuilder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -36,7 +45,6 @@ public class AdminPlaceController {
 
     private static final Logger logger = LoggerFactory.getLogger(AdminPlaceController.class);
 
-<<<<<<< HEAD
     private static final String PLACE_SERVICE_NAME = "place-service";
     private static final String PATH_TO_GET_LIST_OF_PLACES = "/place/allplaces";
     private static final String PATH_TO_ADD_PLACE_WITH_IMAGES = "/place/add-place";
@@ -44,25 +52,7 @@ public class AdminPlaceController {
     private static final String PATH_TO_UPDATE_PLACE = "/place/update/{placeId}";
     private static final String PATH_TO_DELETE_PLACE = "/place/delete/{placeId}";
     private static final String PATH_TO_GET_PLACE_IDS_AND_CATEGORIES = "/place/places/categories";
-=======
-			            response.setPlaceRelatedImages(images);
-			        } catch (InterruptedException e) {
-			            Thread.currentThread().interrupt();
-			            e.printStackTrace();
-			        } catch (ExecutionException e) {
-			            e.printStackTrace();
-			        }
-			        
-		    	 
-		    	 System.out.println("Admin Response Data====> ::"+response);
-		    	 //add response to List
-		    	 dtos.add(response);
-		     }
-		     
-		     return new ResponseEntity<List<AdminPlaceResponseDTO>>(dtos,HttpStatus.OK); 
-	}
-	
-	//88*********************************************************************************************
+
 	
 	@PostMapping(path = "/place/addPlace",
 	        consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
@@ -112,8 +102,6 @@ public class AdminPlaceController {
 	    return ResponseEntity.ok(response);
 	}
  
->>>>>>> branch 'commondb/new-versionB' of https://github.com/nikhilkatna/MyCityRemoteRepo.git
-
     @Autowired
     public WebClient.Builder webClientBuilder;
 
@@ -157,6 +145,7 @@ public class AdminPlaceController {
         return new ResponseEntity<>(dtos, HttpStatus.OK);
     }
 
+    /*
     @PostMapping(path = "/place/addPlace",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
@@ -190,7 +179,8 @@ public class AdminPlaceController {
 
         return ResponseEntity.ok(response);
     }
-
+     */
+    
     @GetMapping("/getplace/{placeId}")
     public ResponseEntity<PlaceResponseDTO> getPlace(@PathVariable Long placeId) {
         logger.info("Fetching place with ID: {}", placeId);
@@ -209,30 +199,37 @@ public class AdminPlaceController {
     public ResponseEntity<String> updatePlace(@PathVariable Long placeId, @RequestBody PlaceDTO dto) {
         logger.info("Updating place with ID: {}", placeId);
 
-        String result = webClientBuilder.build()
+        ResponseEntity<String> response = webClientBuilder.build()
                 .put()
                 .uri("lb://" + PLACE_SERVICE_NAME + PATH_TO_UPDATE_PLACE, placeId)
                 .bodyValue(dto)
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+                .exchangeToMono(clientResponse ->
+                    clientResponse.bodyToMono(String.class)
+                        .defaultIfEmpty("") // In case body is empty
+                        .map(body -> ResponseEntity.status(clientResponse.statusCode()).body(body))
+                )
+                .block(); // Blocking for synchronous return
 
-        return ResponseEntity.ok(result);
+        return response;
     }
+
 
     @DeleteMapping("/deleteplace/{placeId}")
     public ResponseEntity<String> deletePlace(@PathVariable Long placeId) {
         logger.info("Deleting place with ID: {}", placeId);
 
-        String result = webClientBuilder.build()
+        ResponseEntity<String> responseEntity = webClientBuilder.build()
                 .delete()
                 .uri("lb://" + PLACE_SERVICE_NAME + PATH_TO_DELETE_PLACE, placeId)
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+                .exchangeToMono(clientResponse -> 
+                    clientResponse.bodyToMono(String.class)
+                        .map(body -> ResponseEntity.status(clientResponse.statusCode()).body(body))
+                )
+                .block(); // Blocking here to return synchronously
 
-        return ResponseEntity.ok(result);
+        return responseEntity;
     }
+
 
     @GetMapping("/getall/category")
     public ResponseEntity<List<PlaceCategoryDTO>> getAllPlacesIdsByCategory() {

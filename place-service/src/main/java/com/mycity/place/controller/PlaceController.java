@@ -2,7 +2,6 @@ package com.mycity.place.controller;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -10,7 +9,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -21,7 +19,6 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.mycity.place.entity.Place;
 import com.mycity.place.exception.GlobalExceptionHandler;
 import com.mycity.place.service.PlaceServiceInterface;
 import com.mycity.shared.placedto.PlaceCategoryDTO;
@@ -80,30 +77,31 @@ public class PlaceController {
 	// Get place by ID (Place entity)
 	@GetMapping("/get/{placeId}")
 	public ResponseEntity<PlaceResponseDTO> getPlaceDetails(@PathVariable Long placeId) {
-		PlaceResponseDTO place = placeService.getPlace(placeId);
-		return new ResponseEntity<>(place, HttpStatus.OK);
+		ResponseEntity<PlaceResponseDTO> response = placeService.getPlace(placeId);
+		return response;
 	}
 
 	// Update place using PlaceDTO
 	@PutMapping("/update/{placeId}")
 	public ResponseEntity<String> updatePlaceDetails(@PathVariable Long placeId, @RequestBody PlaceDTO dto) {
-		String msg = placeService.updatePlace(placeId, dto);
-		return new ResponseEntity<>(msg, HttpStatus.OK);
+		ResponseEntity<String> response = placeService.updatePlace(placeId, dto);
+		return response;
 	}
 
 	// Delete place
 	@DeleteMapping("/delete/{placeId}")
 	public ResponseEntity<String> deletePlaceDetails(@PathVariable Long placeId) {
-		String msg = placeService.deletePlace(placeId);
-		return new ResponseEntity<>(msg, HttpStatus.OK);
+		ResponseEntity<String> response = placeService.deletePlace(placeId);
+		return response;
 	}
 
 
 
 	@GetMapping("/allplaces")
 	public ResponseEntity<List<PlaceResponseDTO>> getAllPlaces() {
-		return ResponseEntity.ok(placeService.getAllPlaces());
-	}
+		ResponseEntity<List<PlaceResponseDTO>> response=placeService.getAllPlaces();
+		return response;
+ 	}
 
 	@GetMapping("/placeby/{id}")
 	public ResponseEntity<PlaceDTO> getPlaceById(@PathVariable Long id) {

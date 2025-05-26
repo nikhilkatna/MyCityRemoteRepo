@@ -80,6 +80,21 @@ public class CloudinaryHelper {
 			e.printStackTrace();
 		}
 	}
+	
+	public String saveVideo(MultipartFile video) {
+	    try {
+	        Map<String, Object> uploadOptions = new HashMap<>();
+	        uploadOptions.put("folder", "Videos"); // You can customize the folder
+	        uploadOptions.put("resource_type", "video"); // Required for video
+
+	        Map<String, Object> uploadResult = cloudinary.uploader().upload(video.getBytes(), uploadOptions);
+	        return (String) uploadResult.get("url");
+	    } catch (IOException e) {
+	        e.printStackTrace();
+	        throw new RuntimeException("Failed to upload video to Cloudinary", e);
+	    }
+	}
+
 
 	private String extractPublicIdFromUrl(String url) {
 	    // Assuming URL format: https://res.cloudinary.com/your-cloud-name/image/upload/v123456789/folder/imagename.jpg

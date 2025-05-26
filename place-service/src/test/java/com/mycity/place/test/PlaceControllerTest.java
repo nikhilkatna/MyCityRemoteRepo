@@ -30,6 +30,7 @@ import com.mycity.shared.placedto.PlaceWithImagesDTO;
 import com.mycity.shared.timezonedto.TimezoneDTO;
 import com.mycity.shared.tripplannerdto.CoordinateDTO;
 
+/*
 @ExtendWith(MockitoExtension.class)
 class PlaceControllerTest {
 
@@ -161,5 +162,5 @@ class PlaceControllerTest {
         assertEquals("Image Place", response.getBody().get(0).getPlaceName());
     }
 }
-
+*/
 

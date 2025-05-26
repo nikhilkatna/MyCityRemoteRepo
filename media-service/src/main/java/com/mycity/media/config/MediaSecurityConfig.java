@@ -18,7 +18,7 @@ public class MediaSecurityConfig {
 	        .csrf(csrf -> csrf.disable())
 	        .authorizeHttpRequests(auth -> auth
 	            .requestMatchers("/media/get-image/{userId}","/media/admin/get-image/**","/media/admin/upload","/media/upload/image","/media/images/**","/media/upload","/media/cover-image","/media/fetch{id}","/media/images/{placeId}","/media/images/delete/{placeId}",
-	            		         "/media/review/upload","/media/review/delete/{reviewId}","/media/bycategory/image","/media/findby/{placeId}",
+	            		         "/media/review/upload","/media/review/delete/{reviewId}","/media/bycategory/image","/media/findby/{placeId}","/media/video/upload","/media/video/geturl/{monthName}","/media/video/currentmonth",
 	            		         "/media/gallery/upload","media/gallery/getimages/{districtName}","/media/gallery/deleteimage/{imageId}","/media/image-byplacename/{placeName}","/media/upload/places","/media/upload/cuisines","/media/upload/images", "/media/delete/images/**", "/media/update/images/**", "/media/fetch/images/**","/media/review/image/place/**","/media/images/image-byplacename/{placeName}")
 	            .permitAll()
 	            .anyRequest().authenticated()

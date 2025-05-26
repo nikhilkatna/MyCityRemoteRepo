@@ -45,6 +45,7 @@ public class ClientAdminPlaceDiscoveriesController {
     @PostMapping("/addplace")
     public Mono<ResponseEntity<String>> addPlaceToDiscovery(@RequestBody PlaceDiscoveriesDTO dto,
                                                             @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie) {
+    	System.out.println("ClientAdminPlaceDiscoveriesController"+dto);
         logger.info("Request to add place to discoveries: {}", dto.getPlaceName());
 
         String token = extractor.extractTokenFromCookie(cookie);

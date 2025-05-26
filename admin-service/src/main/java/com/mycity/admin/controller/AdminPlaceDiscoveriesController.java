@@ -35,7 +35,7 @@ public class AdminPlaceDiscoveriesController {
     @PostMapping("/addPlace")
     public ResponseEntity<String> addPlace(@RequestBody PlaceDiscoveriesDTO dto) {
         logger.info("Adding place to discoveries: {}", dto.getPlaceName());
-
+        System.out.println("AdminPlaceDiscoveriesController.addPlace()");
         try {
             String result = webClientBuilder.build()
                     .post()
