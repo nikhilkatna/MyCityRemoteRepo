@@ -17,7 +17,7 @@ import com.mycity.media.service.ReviewImageService;
 import jakarta.ws.rs.core.MediaType;
 
 @RestController
-@RequestMapping("/media/review")
+@RequestMapping("/media")
 public class ReviewImageController 
 {
   @Autowired
@@ -41,7 +41,7 @@ public class ReviewImageController
   {
 	  return ResponseEntity.ok(service.deleteReviewImage(reviewId));
   }
-  @GetMapping("/image/place/{placeId}")
+  @GetMapping("/review/image/place/{placeId}")
   public String getImagesPlaceReview(@PathVariable long placeId) {
        return service.getReviewForPlace(placeId);
      

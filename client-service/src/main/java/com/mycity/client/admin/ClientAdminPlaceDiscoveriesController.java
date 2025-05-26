@@ -69,6 +69,7 @@ public class ClientAdminPlaceDiscoveriesController {
                 .map(response -> ResponseEntity.status(response.getStatusCode()).body(response.getBody()));
     }
 
+
     @GetMapping("/getall")
     public Mono<ResponseEntity<List<PlaceDiscoveriesResponeDTO>>> getAllPlaces(
             @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie) {
@@ -76,6 +77,15 @@ public class ClientAdminPlaceDiscoveriesController {
         logger.info("Request to fetch all discovered places");
 
         String token = extractor.extractTokenFromCookie(cookie);
+
+
+	//RESOLVE THIS IS AN PUBLIC ENDPOINT WHY USING THE COOKIE HERE IF IT IS DEFINED ESPECIALLY FOR ADMIN THE WHAT ABOUT USER PUBLIC ENDPOINT
+	@GetMapping("/getall")
+    public Mono<ResponseEntity<List<PlaceDiscoveriesResponeDTO>>> getAllPlaces(@RequestHeader(value=HttpHeaders.COOKIE,required = false) String cookie) 
+ 	{
+ 		System.out.println("ClientAdminPlaceDiscoverController.getAllPlaces()");
+ 	    //Extract Token From Cookie
+ 		String token=extractor.extractTokenFromCookie(cookie);
 
         return webClientBuilder.build()
                 .get()

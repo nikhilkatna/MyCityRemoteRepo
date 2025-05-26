@@ -43,6 +43,7 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/client/place")
 @RequiredArgsConstructor
+
 public class ClientPlaceController {
 
     private static final Logger log = LoggerFactory.getLogger(ClientPlaceController.class);
@@ -123,6 +124,99 @@ public class ClientPlaceController {
                 .doOnError(e -> log.error("Error getting place ID: {}", e.getMessage()))
                 .onErrorResume(e -> Mono.just("Failed to get Place Id: " + e.getMessage()));
     }
+
+
+public class ClientPlaceController
+{
+	@Autowired
+	private final WebClient.Builder webClientBuilder;
+	@Autowired
+	private CookieTokenExtractor extractor;
+	
+	private static final String API_GATEWAY_SERVICE_NAME="API-GATEWAY";
+	
+	private static final String PLACE_REGISTRATION_PATH="/admin/place/addPlace";
+	
+    private static final String PLACE_ID_FINDING_PATH="/place/getid/{placeName}";
+	
+	private static final String PLACE_DETAILS_FINDING_PATH="/place/get/{placeId}";
+	
+	private static final String PLACE_UPDATING_PATH="/place/updateplace/{placeId}";
+	
+	private static final String PLACE_DELETING_PATH="/place/deleteplace/{placeId}";
+	
+	private static final String ALL_PLACES_FINDING_PATH="/place/discoveries/getall";
+	
+	@PostMapping(value = "/add", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+	public Mono<String> addPlace(
+	        @ModelAttribute("placeDto") PlaceDTO placeDto,
+	        @RequestParam Map<String, MultipartFile> placeImages,
+	        @RequestParam Map<String, MultipartFile> cuisineImages,
+	        @RequestHeader(value = HttpHeaders.COOKIE, required = false) String cookie
+	) throws JsonProcessingException {
+ 
+	    System.out.println("ClientPlaceController.addPlace()");
+ 
+	    // 🔐 Extract token from cookie
+	    String token = extractor.extractTokenFromCookie(cookie);
+ 
+	    // 🧱 Build multipart request
+	    MultipartBodyBuilder builder = new MultipartBodyBuilder();
+ 
+	    // 🧾 Convert DTO to JSON
+	    ObjectMapper mapper = new ObjectMapper();
+	    mapper.registerModule(new JavaTimeModule());
+	    mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+	    String placeDtoJson = mapper.writeValueAsString(placeDto);
+ 
+	    builder.part("placeDto", placeDtoJson)
+	           .header("Content-Disposition", "form-data; name=placeDto")
+	           .contentType(MediaType.APPLICATION_JSON);
+ 
+	    // 🖼️ Add placeImages
+	    for (Map.Entry<String, MultipartFile> entry : placeImages.entrySet()) {
+	        builder.part(entry.getKey(), entry.getValue().getResource());
+	    }
+ 
+	    // 🍜 Add cuisineImages
+	    for (Map.Entry<String, MultipartFile> entry : cuisineImages.entrySet()) {
+	        builder.part(entry.getKey(), entry.getValue().getResource());
+	    }
+ 
+	    // 🌐 Send to API Gateway → Admin → Place-Service
+	    return webClientBuilder.build()
+	            .post()
+	            .uri("lb://" + API_GATEWAY_SERVICE_NAME + PLACE_REGISTRATION_PATH)
+	            .contentType(MediaType.MULTIPART_FORM_DATA)
+	            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+	            .body(BodyInserters.fromMultipartData(builder.build()))
+	            .retrieve()
+	            .onStatus(HttpStatusCode::isError, clientResponse ->
+	                    clientResponse.bodyToMono(String.class)
+	                            .flatMap(errorBody -> Mono.error(new RuntimeException("Failed to Add Place: "
+	                                    + clientResponse.statusCode() + " - " + errorBody))))
+	            .bodyToMono(String.class)
+	            .onErrorResume(e -> Mono.just("Failed to Add Place: " + e.getMessage()));
+	}
+ 
+	
+
+
+	@GetMapping("/getid/{placeName}")
+	public Mono<String> getPlaceId(@PathVariable String placeName) {
+		System.out.println("ClientPlaceController.getPlaceId()");
+	    return webClientBuilder.build()
+	            .get()
+	            .uri("lb://" +API_GATEWAY_SERVICE_NAME + PLACE_ID_FINDING_PATH,placeName)
+	            .retrieve()
+	            .onStatus(HttpStatusCode::isError, clientResponse ->
+	                    clientResponse.bodyToMono(String.class)
+	                            .flatMap(errorBody -> Mono.error(new RuntimeException("Failed to Add Place: " + clientResponse.statusCode() + " - " + errorBody))))
+	            .bodyToMono(String.class)
+	            .onErrorResume(e -> Mono.just("Failed to get Place Id: " + e.getMessage()));
+	}
+	
+	 // Corrected getPlaceDetailsById method
 
     @GetMapping("/getplace/{placeId}")
     public Mono<PlaceDTO> getPlaceDetailsById(

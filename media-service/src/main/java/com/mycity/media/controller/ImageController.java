@@ -86,6 +86,8 @@ public class ImageController {
 
 	@GetMapping("/image-byplacename/{placeName}")
 	public ResponseEntity<List<AboutPlaceImageDTO>> getAboutPlaceImagesForTop10Des(@PathVariable String placeName) {
+		System.out.println("Fetching images for placeName: " + placeName);
+
 		List<AboutPlaceImageDTO> images = imageService.getAboutPlaceImages(placeName);
 		return ResponseEntity.ok(images);
 	}

@@ -157,11 +157,14 @@ public class ImageServiceImpl implements ImageService {
 	public List<AboutPlaceImageDTO> getAboutPlaceImages(String placeName) {
 		  // Fetch all images associated with the placeId
 	    List<Images> images = imageServiceRepository.findImagesByPlaceName(placeName);
+	    System.out.println("Fetching images for placeName: " + placeName);
 
 	    // Map to DTOs
 	    List<AboutPlaceImageDTO> imageDTOs = new ArrayList<>();
 	    for (Images image : images) {
-	        if ("placeimagemain".equals(image.getImageName())) {
+	    	if (image.getImageName().toLowerCase().contains("main")) {
+	        	System.out.println("Fetching images for placeName: " + image.getImageName());
+
 	            AboutPlaceImageDTO dto = new AboutPlaceImageDTO();
 	            dto.setImageUrl(image.getImageUrl());   // Assuming Images has getImageUrl()
 	            dto.setImageName(image.getImageName()); // Assuming Images has getImageName()

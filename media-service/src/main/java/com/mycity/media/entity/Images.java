@@ -20,7 +20,7 @@ public class Images
 	private Long imageId;
 
 	private String imageUrl;
-
+	@Column(name = "place_name") 
 	private String placeName; // You might still want to store the name here
 
 	private String category;
